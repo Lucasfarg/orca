@@ -1,17 +1,20 @@
-import { resolve, relative, isAbsolute, sep } from 'node:path'
+import { resolve, relative, isAbsolute, sep, dirname } from 'node:path'
+import { statSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 
 /**
  * Check whether resolvedTarget is equal to or a descendant of resolvedBase.
  * Uses relative() so it works with both `/` (Unix) and `\` (Windows) separators.
  *
- * Compared byte-exactly first, then across Unicode forms — see isDescendantOrEqualAcrossUnicodeForms.
+ * Compared byte-exactly first, then across Unicode forms — but only where both spellings prove to
+ * be one filesystem object.
  */
 export function isDescendantOrEqual(resolvedTarget: string, resolvedBase: string): boolean {
-  return (
-    isDescendantOrEqualExact(resolvedTarget, resolvedBase) ||
-    isDescendantOrEqualAcrossUnicodeForms(resolvedTarget, resolvedBase)
-  )
+  if (isDescendantOrEqualExact(resolvedTarget, resolvedBase)) {
+    return true
+  }
+  const ancestor = foldedContainmentAncestor(resolvedTarget, resolvedBase)
+  return ancestor !== null && isSameFilesystemObject(ancestor, resolvedBase)
 }
 
 function isDescendantOrEqualExact(resolvedTarget: string, resolvedBase: string): boolean {
@@ -47,23 +50,49 @@ function hasNonAscii(value: string): boolean {
  * workspace and fs:readFile denies a path the user is looking at (#21172). ASCII paths are immune,
  * which is why the guard held for so long.
  *
- * Folding to NFC is the trade normalizeRuntimePathForComparison already takes: canonically
- * equivalent names ARE one file on APFS, and on a byte-exact Linux or SSH host the only thing it
- * admits is a sibling deliberately spelled in the other form — already inside a registered root.
- * That equivalence includes singletons (U+212A KELVIN SIGN folds to K), so the admission is any
- * canonically equal spelling, not only a recomposed one.
+ * Canonical equivalence is not containment on its own: APFS folds both spellings onto one
+ * directory, ext4 keeps them as distinct siblings, and the unregistered sibling is not the root —
+ * equivalence includes singletons such as U+212A KELVIN SIGN folding to K. So the fold only locates
+ * the candidate ancestor, in the caller's spelling; isDescendantOrEqual settles identity.
+ *
+ * Walks up by component count, never by offset: NFD is longer than NFC.
  */
-function isDescendantOrEqualAcrossUnicodeForms(
-  resolvedTarget: string,
-  resolvedBase: string
-): boolean {
+function foldedContainmentAncestor(resolvedTarget: string, resolvedBase: string): string | null {
   // Both sides must carry non-ASCII before normalize() earns its allocation: ASCII is identical in
   // every form, so a mismatch confined to it is a real one. Target first — it is the side the
   // allow-list scan holds fixed while it walks every registered root.
   if (!hasNonAscii(resolvedTarget) || !hasNonAscii(resolvedBase)) {
+    return null
+  }
+  const foldedBase = resolvedBase.normalize('NFC')
+  const foldedTarget = resolvedTarget.normalize('NFC')
+  if (!isDescendantOrEqualExact(foldedTarget, foldedBase)) {
+    return null
+  }
+  const descent = relative(foldedBase, foldedTarget)
+  let ancestor = resolvedTarget
+  for (let depth = descent === '' ? 0 : descent.split(sep).length; depth > 0; depth -= 1) {
+    ancestor = dirname(ancestor)
+  }
+  return ancestor
+}
+
+/**
+ * The same directory entry, not merely the same name — the question the fold is really asking, and
+ * only the filesystem can answer it.
+ *
+ * Fails closed: an ancestor that cannot be stat'ed has not shown it is the registered root, and ino
+ * is 0 on volumes that expose none. Reached only on a containment the exact comparison refused, so
+ * ASCII paths and non-folding roots still touch no disk.
+ */
+function isSameFilesystemObject(pathA: string, pathB: string): boolean {
+  try {
+    const statA = statSync(pathA)
+    const statB = statSync(pathB)
+    return statA.ino !== 0 && statA.dev === statB.dev && statA.ino === statB.ino
+  } catch {
     return false
   }
-  return isDescendantOrEqualExact(resolvedTarget.normalize('NFC'), resolvedBase.normalize('NFC'))
 }
 
 /**
