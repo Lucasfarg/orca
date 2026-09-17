@@ -4,8 +4,17 @@ import { realpath } from 'node:fs/promises'
 /**
  * Check whether resolvedTarget is equal to or a descendant of resolvedBase.
  * Uses relative() so it works with both `/` (Unix) and `\` (Windows) separators.
+ *
+ * Compared byte-exactly first, then across Unicode forms — see isDescendantOrEqualAcrossUnicodeForms.
  */
 export function isDescendantOrEqual(resolvedTarget: string, resolvedBase: string): boolean {
+  return (
+    isDescendantOrEqualExact(resolvedTarget, resolvedBase) ||
+    isDescendantOrEqualAcrossUnicodeForms(resolvedTarget, resolvedBase)
+  )
+}
+
+function isDescendantOrEqualExact(resolvedTarget: string, resolvedBase: string): boolean {
   if (resolvedTarget === resolvedBase) {
     return true
   }
@@ -13,6 +22,48 @@ export function isDescendantOrEqual(resolvedTarget: string, resolvedBase: string
   // Security: reject "..", "../…" or an absolute rel — on Windows relative() returns absolute across drives, which would bypass drive-traversal checks.
   // Use isAbsolute, not rejoin+compare: Windows path.relative() ignores drive/root casing, so rejoining would deny valid c:\repo under C:\Repo.
   return rel !== '' && !(rel === '..' || rel.startsWith(`..${sep}`)) && !isAbsolute(rel)
+}
+
+/**
+ * Why a loop and not a regex: `[^\u0000-\u007f]` trips no-control-regex, and this runs once per
+ * registered root on every filesystem IPC, where charCodeAt beats an ICU-backed scan anyway.
+ */
+function hasNonAscii(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    if (value.charCodeAt(index) > 0x7f) {
+      return true
+    }
+  }
+  return false
+}
+
+/**
+ * The same name, spelled two ways.
+ *
+ * macOS returns a path in whichever Unicode form its source held: APFS gives back the form it
+ * stores — NFD for names typed into Finder — while the file picker and git (`core.precomposeunicode`)
+ * give back NFC. A workspace whose path contains Korean, accented or otherwise composed characters
+ * is registered in one form and read in the other, so byte comparison puts the file outside its own
+ * workspace and fs:readFile denies a path the user is looking at (#21172). ASCII paths are immune,
+ * which is why the guard held for so long.
+ *
+ * Folding to NFC is the trade normalizeRuntimePathForComparison already takes: canonically
+ * equivalent names ARE one file on APFS, and on a byte-exact Linux or SSH host the only thing it
+ * admits is a sibling deliberately spelled in the other form — already inside a registered root.
+ * That equivalence includes singletons (U+212A KELVIN SIGN folds to K), so the admission is any
+ * canonically equal spelling, not only a recomposed one.
+ */
+function isDescendantOrEqualAcrossUnicodeForms(
+  resolvedTarget: string,
+  resolvedBase: string
+): boolean {
+  // Both sides must carry non-ASCII before normalize() earns its allocation: ASCII is identical in
+  // every form, so a mismatch confined to it is a real one. Target first — it is the side the
+  // allow-list scan holds fixed while it walks every registered root.
+  if (!hasNonAscii(resolvedTarget) || !hasNonAscii(resolvedBase)) {
+    return false
+  }
+  return isDescendantOrEqualExact(resolvedTarget.normalize('NFC'), resolvedBase.normalize('NFC'))
 }
 
 /**
