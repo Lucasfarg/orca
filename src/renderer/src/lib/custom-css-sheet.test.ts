@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest'
-import { applyCustomCssSheet, buildCustomCssSheet, stripRemoteRules } from './custom-css-sheet'
+import { applyCustomCssSheet, buildCustomCssSheet, stripResourceFetches } from './custom-css-sheet'
 
 function cssText(sheet: CSSStyleSheet): string {
   return Array.from(sheet.cssRules, (rule) => rule.cssText).join('\n')
@@ -44,7 +44,7 @@ function stubContainer(rules: StubRule[]): {
   return { cssRules: rules, deleteRule: (index) => void rules.splice(index, 1) }
 }
 
-describe('stripRemoteRules', () => {
+describe('stripResourceFetches', () => {
   const remoteProperty = {
     cssText:
       '@property --img { syntax: "<image>"; inherits: false; initial-value: url(https://example.com/a.png); }'
@@ -59,7 +59,7 @@ describe('stripRemoteRules', () => {
     }
     const sheet = stubContainer([{ ...remoteProperty }, localCounter, media])
 
-    stripRemoteRules(sheet)
+    stripResourceFetches(sheet)
 
     expect(sheet.cssRules).toEqual([localCounter, media])
     expect(media.cssRules).toEqual([localCounter])

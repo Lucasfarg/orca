@@ -63,7 +63,7 @@ test.describe('custom.css', () => {
     expect(await orcaPage.evaluate(() => getComputedStyle(document.body).backgroundImage)).toBe(
       'none'
     )
-    // Chromium removes the escaped tab and folds `\` to `/` before resolving, so both still fetch.
+    // Chromium removes the escaped tab and folds `\` to `/` before resolving, so both would fetch if kept.
     expect(await readRootVar(orcaPage, '--split-scheme')).toBe('')
     expect(await readRootVar(orcaPage, '--unc-path')).toBe('')
     // A relative URL resolves against the renderer origin, which is HTTP in development.

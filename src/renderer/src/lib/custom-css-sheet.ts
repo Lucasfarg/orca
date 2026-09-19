@@ -1,4 +1,4 @@
-import { loadsExternalCustomCssResource } from '../../../shared/custom-css'
+import { fetchesCustomCssResource } from '../../../shared/custom-css'
 
 type CssRuleNode = { readonly cssText: string }
 type CssRuleContainer = {
@@ -14,31 +14,31 @@ function isContainer(rule: CssRuleNode): rule is CssRuleNode & CssRuleContainer 
   return 'cssRules' in rule && 'deleteRule' in rule
 }
 
-/** Removes declarations that load anything but a `data:` URL; only a rule CSSOM cannot expose the values of (e.g. @property) is dropped whole. */
-export function stripRemoteRules(container: CssRuleContainer): void {
+/** Removes every declaration that fetches; a rule whose values CSSOM cannot expose (e.g. @property) is deleted instead. */
+export function stripResourceFetches(container: CssRuleContainer): void {
   for (let index = container.cssRules.length - 1; index >= 0; index--) {
     const rule = container.cssRules[index]
     if (hasStyle(rule)) {
       // Why: CSSOM hands back longhands serialized by Chromium, not the user's spelling.
       for (const property of Array.from(rule.style)) {
-        if (loadsExternalCustomCssResource(rule.style.getPropertyValue(property))) {
+        if (fetchesCustomCssResource(rule.style.getPropertyValue(property))) {
           rule.style.removeProperty(property)
         }
       }
     }
     if (isContainer(rule)) {
-      stripRemoteRules(rule)
-    } else if (!hasStyle(rule) && loadsExternalCustomCssResource(rule.cssText)) {
+      stripResourceFetches(rule)
+    } else if (!hasStyle(rule) && fetchesCustomCssResource(rule.cssText)) {
       container.deleteRule(index)
     }
   }
 }
 
-/** Parses with Chromium's own CSS parser: constructed sheets drop `@import` by spec, and anything that would load remotely is removed. */
+/** Parses with Chromium's own CSS parser: constructed sheets drop `@import` by spec, and every reference but an inline `data:` URL is removed. */
 export function buildCustomCssSheet(css: string): CSSStyleSheet {
   const sheet = new CSSStyleSheet()
   sheet.replaceSync(css)
-  stripRemoteRules(sheet)
+  stripResourceFetches(sheet)
   return sheet
 }
 
