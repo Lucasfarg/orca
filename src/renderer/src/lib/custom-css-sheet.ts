@@ -1,4 +1,4 @@
-import { isRemoteCustomCssValue } from '../../../shared/custom-css'
+import { loadsExternalCustomCssResource } from '../../../shared/custom-css'
 
 type CssRuleNode = { readonly cssText: string }
 type CssRuleContainer = {
@@ -14,21 +14,21 @@ function isContainer(rule: CssRuleNode): rule is CssRuleNode & CssRuleContainer 
   return 'cssRules' in rule && 'deleteRule' in rule
 }
 
-/** Removes remote-loading declarations, and drops whole only the rules whose values CSSOM can't expose (e.g. @property). */
+/** Removes declarations that load anything but a `data:` URL; only a rule CSSOM cannot expose the values of (e.g. @property) is dropped whole. */
 export function stripRemoteRules(container: CssRuleContainer): void {
   for (let index = container.cssRules.length - 1; index >= 0; index--) {
     const rule = container.cssRules[index]
     if (hasStyle(rule)) {
       // Why: CSSOM hands back longhands serialized by Chromium, not the user's spelling.
       for (const property of Array.from(rule.style)) {
-        if (isRemoteCustomCssValue(rule.style.getPropertyValue(property))) {
+        if (loadsExternalCustomCssResource(rule.style.getPropertyValue(property))) {
           rule.style.removeProperty(property)
         }
       }
     }
     if (isContainer(rule)) {
       stripRemoteRules(rule)
-    } else if (!hasStyle(rule) && isRemoteCustomCssValue(rule.cssText)) {
+    } else if (!hasStyle(rule) && loadsExternalCustomCssResource(rule.cssText)) {
       container.deleteRule(index)
     }
   }
