@@ -43,5 +43,8 @@ describe('fetchesCustomCssResource', () => {
     expect(fetchesCustomCssResource('url(wallpaper.png)')).toBe(true)
     expect(fetchesCustomCssResource('image-set("x.png" 1x)')).toBe(true)
     expect(fetchesCustomCssResource('src("fonts/x.woff2")')).toBe(true)
+    // Chromium keeps U+00A0 inside the URL, so neither of these is a data: URL.
+    expect(fetchesCustomCssResource('url("\u00a0data:image/png;base64,AAAA")')).toBe(true)
+    expect(fetchesCustomCssResource('url("d\\61\u00a0ta:image/png;base64,AAAA")')).toBe(true)
   })
 })

@@ -16,8 +16,9 @@ export type CustomCssSnapshot = {
   error: CustomCssFileError | null
 }
 
+// Why: CSS whitespace is these five characters; JS `\s` also matches U+00A0, which CSS keeps inside a URL.
 // A backslash before a newline is a line continuation: the parser removes both.
-const CSS_ESCAPE = /\\(?:([0-9a-fA-F]{1,6})\s?|\r?\n|([^\n]))/g
+const CSS_ESCAPE = /\\(?:([0-9a-fA-F]{1,6})[ \t\n\r\f]?|\r?\n|([^\n]))/g
 
 function decodeCssEscapes(value: string): string {
   return value.replace(CSS_ESCAPE, (_match, hex: string | undefined, char: string | undefined) => {
@@ -32,7 +33,8 @@ function decodeCssEscapes(value: string): string {
 // Matches an absolute or protocol-relative URL anywhere in a value.
 const REMOTE_REFERENCE = /(?:\b(?:https?|wss?|ftp|file):|(?:^|[\s"'(,])\/\/)/i
 // Why: an inline SVG needs `xmlns='http://…'`, which is text, not a fetch; drop data: URLs before matching.
-const DATA_URL = /url\(\s*(["']?)\s*data:[\s\S]*?\1\s*\)|(["'])\s*data:[\s\S]*?\2/gi
+const DATA_URL =
+  /url\([ \t\n\r\f]*(["']?)[ \t\n\r\f]*data:[\s\S]*?\1[ \t\n\r\f]*\)|(["'])[ \t\n\r\f]*data:[\s\S]*?\2/gi
 // A url()/src() left once the data: URLs are gone points at something to fetch.
 const RESOURCE_FUNCTION = /(?:^|[^\w-])(?:url|src)\(/i
 // image-set() also takes a bare string, so one left inside it is a reference too.
