@@ -10,7 +10,7 @@ import { ensureCustomCssFile, getUserCustomCssPath, readCustomCssFile } from './
 // Why: one editor save can fire several events; coalesce them into one reload.
 const RELOAD_DEBOUNCE_MS = 100
 
-// Why: a watcher error is usually transient (the folder was swapped, descriptors ran out); re-arm a few times, then stop.
+// Why: a watcher error can be transient (the folder was swapped, descriptors ran out); re-arm on a backoff. A delivered event restores the budget; five failures without one and live reload is over for this session.
 const WATCH_RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000]
 
 export type CustomCssServiceOptions = {
@@ -36,7 +36,7 @@ export class CustomCssService {
     return this.path
   }
 
-  /** Reads the file; the first read starts one folder watch that lasts until quit. */
+  /** Reads the file; the first read starts one folder watch that lasts until quit or until the retries run out. */
   getSnapshot(): CustomCssSnapshot {
     this.startWatching()
     return readCustomCssFile(this.path)
@@ -47,7 +47,7 @@ export class CustomCssService {
     return this.getSnapshot()
   }
 
-  /** Permanent: only the quit path disposes the service. */
+  /** Final: only the quit path calls it, so nothing re-arms the watcher afterwards. */
   dispose(): void {
     this.disposed = true
     if (this.reloadTimer) {
@@ -75,6 +75,7 @@ export class CustomCssService {
       // Why: the folder must exist to see a custom.css the user creates by hand.
       mkdirSync(directory, { recursive: true })
     } catch (error) {
+      // Why: no folder, no watch — live reload stays off until the next read starts one.
       console.error('Failed to create the custom.css folder:', error)
       return
     }
@@ -90,7 +91,7 @@ export class CustomCssService {
     )
   }
 
-  /** Re-arms the watcher on a backoff; nothing else re-reads the file while a window stays open. */
+  /** Re-arms the watcher itself: a read only happens when a window mounts or the user opens the setting, not while one stays open. */
   private scheduleRetry(): void {
     const delay = WATCH_RETRY_DELAYS_MS[this.retryIndex]
     if (this.disposed || this.retryTimer || delay === undefined) {
@@ -106,6 +107,7 @@ export class CustomCssService {
   }
 
   private scheduleReload(): void {
+    // Why: an event proves the watcher works, so the retry budget starts over.
     this.retryIndex = 0
     if (this.reloadTimer) {
       clearTimeout(this.reloadTimer)
