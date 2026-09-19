@@ -28,12 +28,21 @@ function decodeCssEscapes(value: string): string {
   })
 }
 
-// Matches an absolute or protocol-relative network URL anywhere in a value.
-const REMOTE_REFERENCE = /(?:\b(?:https?|wss?|ftp):|(?:^|[\s"'(,])\/\/)/i
+// Matches an absolute or protocol-relative URL anywhere in a value.
+const REMOTE_REFERENCE = /(?:\b(?:https?|wss?|ftp|file):|(?:^|[\s"'(,])\/\/)/i
 // Why: an inline SVG needs `xmlns='http://…'`, which is text, not a fetch; drop data: URLs before matching.
 const DATA_URL = /url\(\s*(["']?)\s*data:[\s\S]*?\1\s*\)|(["'])\s*data:[\s\S]*?\2/gi
+// Why: allowlist — the URL parser normalizes too many spellings for a denylist to hold.
+const RESOURCE_FUNCTION = /(?:^|[^\w-])(?:url|src)\(/i
+// image-set() also takes bare strings, so a string surviving inside one is a reference.
+const IMAGE_SET_STRING = /image-set\([^)]*["']/i
 
-/** True when a value would fetch from the network, even behind CSS escapes; `data:` and relative URLs pass. */
-export function isRemoteCustomCssValue(value: string): boolean {
-  return REMOTE_REFERENCE.test(decodeCssEscapes(value).replace(DATA_URL, ''))
+/** True when a value loads anything but an inline `data:` URL, even behind CSS escapes. */
+export function loadsExternalCustomCssResource(value: string): boolean {
+  const withoutDataUrls = decodeCssEscapes(value).replace(DATA_URL, '')
+  if (RESOURCE_FUNCTION.test(withoutDataUrls) || IMAGE_SET_STRING.test(withoutDataUrls)) {
+    return true
+  }
+  // Why: the URL parser drops ASCII tab/newline and folds `\` to `/`, so a scheme can hide outside url().
+  return REMOTE_REFERENCE.test(withoutDataUrls.replace(/[\t\n\r]/g, '').replace(/\\/g, '/'))
 }

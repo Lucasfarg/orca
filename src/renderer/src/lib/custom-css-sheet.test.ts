@@ -19,6 +19,20 @@ describe('buildCustomCssSheet', () => {
     expect(text).toContain('blue')
     expect(text).toContain('#181825')
   })
+
+  it('drops relative and file:// references and keeps inline data: URLs', () => {
+    const sheet = buildCustomCssSheet(
+      [
+        '.a { background-image: url("wallpaper.png"); }',
+        '.b { background-image: url(file://server/share/x.png); }',
+        '.c { background-image: url("data:image/png;base64,AAAA"); }'
+      ].join('\n')
+    )
+    const text = cssText(sheet)
+    expect(text).not.toContain('wallpaper.png')
+    expect(text).not.toContain('server')
+    expect(text).toContain('data:image/png')
+  })
 })
 
 type StubRule = { cssText: string; cssRules?: StubRule[]; deleteRule?: (index: number) => void }

@@ -49,7 +49,10 @@ test.describe('custom.css', () => {
         '@property --remote-img { syntax: "<image>"; inherits: false; initial-value: url(https://example.com/p.png); }',
         `html { background-image: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>"); }`,
         ':root, .dark { --background: #00ff00; --sidebar: u\\72l(h\\74tps://example.com/x.png); }',
-        'body { background-image: url(h\\74tps://example.com/y.png); }'
+        'body { background-image: url(h\\74tps://example.com/y.png); }',
+        ':root, .dark { --split-scheme: url("htt\\9 ps://example.com/beacon.png"); }',
+        ':root, .dark { --unc-path: url(\\\\server\\share\\x.png); }',
+        ':root, .dark { --relative-image: url(wallpaper.png); }'
       ].join('\n')
     )
     await expect.poll(() => readRootVar(orcaPage, '--background')).toBe('#00ff00')
@@ -60,6 +63,11 @@ test.describe('custom.css', () => {
     expect(await orcaPage.evaluate(() => getComputedStyle(document.body).backgroundImage)).toBe(
       'none'
     )
+    // Chromium removes the escaped tab and folds `\` to `/` before resolving, so both still fetch.
+    expect(await readRootVar(orcaPage, '--split-scheme')).toBe('')
+    expect(await readRootVar(orcaPage, '--unc-path')).toBe('')
+    // A relative URL resolves against the renderer origin, which is HTTP in development.
+    expect(await readRootVar(orcaPage, '--relative-image')).toBe('')
     // A local inline SVG is not a fetch and must survive.
     expect(
       await orcaPage.evaluate(() => getComputedStyle(document.documentElement).backgroundImage)

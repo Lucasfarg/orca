@@ -11,7 +11,8 @@ const CUSTOM_CSS_TEMPLATE = `/*
  * Settings → Appearance → Custom CSS is on, and reloaded on save.
  *
  * The UI colors come from the variables below. Variable names are internal
- * and may change between releases. Remote url() / @import are ignored.
+ * and may change between releases. url() accepts only inline data: URLs
+ * (remote, relative and file:// are dropped), and @import is ignored.
  */
 
 /* Light theme */
